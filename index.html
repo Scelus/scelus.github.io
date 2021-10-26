@@ -1,0 +1,195 @@
+<html> 
+    <head> 
+        <title>Tree branching</title> 
+        <style> 
+            body { margin: 0; } 
+            canvas { width: 100%; height: 100% } 
+        </style> 
+    </head> 
+    <body> 
+        <script src="js/three.min.js"></script> 
+        <script src="js/TrackballControls.js"></script> 
+        <script> 
+            var scene = new THREE.Scene();
+            var camera = new THREE.PerspectiveCamera( 90, window.innerWidth / window.innerHeight, 0.1, 1000 );
+            var controls = new THREE.TrackballControls( camera );
+            var renderer = new THREE.WebGLRenderer({antialias : true, alpha : true });
+            renderer.setClearColorHex( 0xffffff, 1 );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            document.body.appendChild( renderer.domElement );
+            
+            var light = new THREE.PointLight( 0xFFFFFF, 0.5, 100 );
+            light.position.set( 20, 0, 20 );
+            scene.add( light );
+            
+            var lightAmbient = new THREE.AmbientLight( 0xFFFFFF ); // soft white light 
+            scene.add( lightAmbient );
+           
+            var lengthMax = 3;
+            var lengthInitial = 0.1;
+            var radius = 0.05;
+            
+            var branchColor = 0x111111; // Green - 0x99FF44;
+            var leafColor = 0xFFBAD2; // pink
+            var geometryBranch = new THREE.CylinderGeometry(radius, radius, lengthInitial, 100, 1);
+            var materialBranch = new THREE.MeshPhongMaterial( { ambient: branchColor, color: branchColor, specular: branchColor, shininess: 100, shading: THREE.SmoothShading } );
+            var geometryLeaf = new THREE.CylinderGeometry(10*radius, radius, lengthInitial, 100, 1);
+            var materialLeaf = new THREE.MeshPhongMaterial( { ambient: leafColor, color: leafColor, specular: leafColor, shininess: 100, shading: THREE.SmoothShading } );
+            
+            var axisX = new THREE.Vector3(1, 0, 0);
+            var axisY = new THREE.Vector3(0, 1, 0);
+            var axisZ = new THREE.Vector3(0, 0, 1);
+            var boundingRadius =  lengthMax * 5.5;
+            var boundingCenter = new THREE.Vector3(0,  boundingRadius + lengthMax/2, 0);
+            var maxLevel = 9;
+            var spreadAngle = Math.PI/5;
+            
+            
+            function leaf () {
+                this.rotation = new THREE.Euler(0, 0, 0, 'XYZ');
+                this.cylinder = new THREE.Mesh( geometryLeaf, materialLeaf );
+                
+                this.add = function (position) {
+                    this.cylinder.position.copy(position);
+                    scene.add( this.cylinder );
+                };
+
+                this.setRotation = function (x, y, z) {
+                    this.rotation = new THREE.Euler( x, y, z, 'XYZ');  
+                    var matrix = new THREE.Matrix4();
+                    matrix.makeRotationFromEuler(this.rotation);
+                    this.cylinder.applyMatrix(matrix);
+                }
+            }
+            
+            function branch () {
+                this.length = lengthInitial;
+                this.growStep = 0.05;
+                this.rotation = new THREE.Euler(0, 0, 0, 'XYZ');
+                this.cylinder = new THREE.Mesh( geometryBranch, materialBranch );
+                this.deltaPosition = new THREE.Vector3(0, this.growStep/2, 0);
+                this.startPosition = new THREE.Vector3(0, 0, 0);
+                this.branched = false;
+                this.branches = [];
+                this.level = 0;
+                this.leafed = false;
+                
+                this.add = function (position) {
+                    this.startPosition.copy(position);
+                    this.cylinder.position.copy(position);
+                    scene.add( this.cylinder );
+                };
+                
+                this.setRotation = function (x, y, z) {
+                    this.rotation = new THREE.Euler( x, y, z, 'XYZ');  
+                    this.deltaPosition.applyEuler(this.rotation);
+                    var matrix = new THREE.Matrix4();
+                    matrix.makeRotationFromEuler(this.rotation);
+                    this.cylinder.applyMatrix(matrix);
+                }
+                
+                this.getEndVector = function () {
+                    var halfDist = new THREE.Vector3();
+                    halfDist.subVectors(this.cylinder.position, this.startPosition);
+                    var endPosition = new THREE.Vector3();
+                    endPosition.addVectors(this.cylinder.position, halfDist);
+                    return endPosition;
+                }
+                
+                this.addBranches = function () {
+                    var endPosition = this.getEndVector();
+                    var newBranchNum = THREE.Math.randInt(2, 3);
+                    for (var i = 0; i < newBranchNum; i++) {
+                        var branchNew = new branch();
+                        branchNew.level = this.level+1;
+                        branchNew.setRotation(this.rotation.x + spreadAngle * THREE.Math.randFloat ( -1, 1 ),
+                                              this.rotation.y + spreadAngle * THREE.Math.randFloat ( -1, 1 ),
+                                              this.rotation.z + spreadAngle * THREE.Math.randFloat ( -1, 1 ));
+                        branchNew.add(endPosition);
+                        this.branches.push(branchNew);
+                    }
+                    this.branched = true;
+                };
+                
+                this.addLeaf = function () {
+                    return;
+                    this.leaf = new leaf();
+                    this.leaf.setRotation(this.rotation.x, this.rotation.y, this.rotation.z);
+                    this.leaf.add(this.getEndVector().add(this.deltaPosition));
+                    this.leafed = true;
+                }
+                
+                this.inBounds = function () {
+                    if((this.cylinder.position.x - boundingCenter.x) * (this.cylinder.position.x - boundingCenter.x) +
+                       (this.cylinder.position.y - boundingCenter.y) * (this.cylinder.position.y - boundingCenter.y) +
+                       (this.cylinder.position.z - boundingCenter.z) * (this.cylinder.position.z - boundingCenter.z) < boundingRadius*boundingRadius)
+                        return true;
+                    else 
+                        return false;
+                }
+                
+                this.grow = function () {
+                    if (this.length >= lengthMax) {
+                        if (!this.branched)
+                            this.addBranches();
+                        else if (this.inBounds() || this.level === 0)
+                            this.growBranches();
+                        else if (!this.leafed)
+                            this.addLeaf();
+                    }
+                    else if (this.level >= maxLevel) {
+                        if (!this.leafed)
+                            this.addLeaf();
+                    }
+                    else if (this.inBounds() || this.level === 0) {
+                        var deltaScale = (this.length + this.growStep) / lengthInitial;
+                        this.length += this.growStep;
+                        
+                        this.cylinder.scale.set(1, deltaScale, 1);
+                        this.cylinder.position.add(this.deltaPosition);
+                    }
+                    else if (!this.leafed)
+                        this.addLeaf();
+                };
+                
+                this.growBranches = function () {
+                    for (var i = 0; i < this.branches.length; i++)
+                        this.branches[i].grow();
+                }
+            }
+            
+            camera.position.y = 25;
+            camera.position.z = 25;
+            camera.lookAt(new THREE.Vector3(0, 0, 0));
+            
+            controls.target.set( 0, 0, 0 );
+            controls.rotateSpeed = 1.0;
+            controls.zoomSpeed = 1.2;
+            controls.panSpeed = 0.8;
+            controls.noZoom = false;
+            controls.noPan = false;
+            controls.staticMoving = false;
+            controls.dynamicDampingFactor = 0.15;
+            controls.keys = [ 65, 83, 68 ];
+            
+            var root = new branch();
+            root.add(new THREE.Vector3(0, lengthInitial/2, 0));
+            root.setRotation(0, 0, 0);
+            
+            function render() { 
+                root.grow();
+                renderer.render( scene, camera );
+            } 
+            
+            function animate() {
+                setTimeout( function() {
+                    requestAnimationFrame( animate );
+                }, 1000/25); 
+                controls.update();    
+                render();
+            }
+            
+            animate();
+        </script> 
+    </body> 
+</html>
