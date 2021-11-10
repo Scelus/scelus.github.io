@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Water ripples</title>
+		<style>
+			body { margin: 0; background-color: whitesmoke;}
+		</style>
+	</head>
+	<body>
+        <script src="js/three.js"></script>
+        <script src="js/TrackballControls.js"></script> 
+		<script>
+            let camera, scene, renderer, stats, controls;
+            let mesh;
+            let raycaster = new THREE.Raycaster();
+            let mouse = new THREE.Vector2();
+
+            const size = 50;
+            const segments = 100;
+            const damping = 0.95;
+            const splashForce = 65;
+
+            // Geometry
+            const geometry = new THREE.BufferGeometry();
+            const heightBuffer1 = [];
+            const heightBuffer2 = [];
+
+            const indices = [];
+
+            const vertices = [];
+            const normals = [];
+            const colors = [];
+
+            init();
+            animate();
+
+            
+
+            function onDocumentMouseDown( event ) {
+                mouse.x = ( event.clientX / renderer.domElement.clientWidth ) * 2 - 1;
+                mouse.y = - ( event.clientY / renderer.domElement.clientHeight ) * 2 + 1;
+
+                raycaster.setFromCamera( mouse, camera );
+
+                var intersects = raycaster.intersectObjects( scene.children, true );
+                if (intersects.length > 0) {
+                    let x = Math.floor(((intersects[0].point.x + size / 2) / size ) * (segments + 1));
+                    let y = Math.floor(((-intersects[0].point.y + size / 2) / size ) * (segments + 1));
+                    let index = x  + y * (segments + 1);
+
+                    if (!(index % (segments + 1) == 0 || index % (segments + 1) == segments || index <= segments || index >= segments*(segments + 1))) {
+                        heightBuffer1[index] = -splashForce;
+                    }
+                }
+            }
+
+            function init() {
+
+                // Camera and controls
+                camera = new THREE.PerspectiveCamera( 27, window.innerWidth / window.innerHeight, 1, 3500 );
+                camera.position.z = 64;
+                camera.position.y = -64;
+                controls = new THREE.TrackballControls( camera );
+                controls.update();
+
+                scene = new THREE.Scene();
+                scene.background = new THREE.Color( 0x2A2A2A );
+                scene.fog = new THREE.Fog( scene.background, 1, 5000 );
+
+                // Light
+                const light = new THREE.AmbientLight(0xffffff);
+                scene.add( light );
+
+				// light
+				const directionalLight = new THREE.DirectionalLight( 0x0000ff, 0.9);
+				directionalLight.position.set( 0, 0, 20 );
+				scene.add( directionalLight );
+
+                const halfSize = size / 2;
+                const segmentSize = size / segments;
+
+                // generate vertices, normals and color data for a simple grid geometry
+                for ( let i = 0; i <= segments; i ++ ) {
+                    const y = ( i * segmentSize ) - halfSize;
+
+                    for ( let j = 0; j <= segments; j ++ ) {
+                        const x = ( j * segmentSize ) - halfSize;
+
+                        
+                        normals.push( 0, 0, 1 );
+                        vertices.push( x, -y, 0 );
+
+                        heightBuffer1.push(0);
+                        heightBuffer2.push(0);
+
+                        colors.push( 44 / 255, 73 / 255, 189 / 255);
+                    }
+                }
+
+                // generate indices (data for element array buffer)
+                for ( let i = 0; i < segments; i ++ ) {
+                    for ( let j = 0; j < segments; j ++ ) {
+
+                        const a = i * ( segments + 1 ) + ( j + 1 );
+                        const b = i * ( segments + 1 ) + j;
+                        const c = ( i + 1 ) * ( segments + 1 ) + j;
+                        const d = ( i + 1 ) * ( segments + 1 ) + ( j + 1 );
+
+                        // generate two faces (triangles) per iteration
+                        indices.push( a, b, d ); // face one
+                        indices.push( b, c, d ); // face two
+                    }
+                }
+
+                geometry.setIndex( indices );
+                geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+                geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
+                geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
+
+                const material = new THREE.MeshStandardMaterial( {
+                    color: 0x2c4999,
+                    wireframe: true,
+                    roughness: 0,   
+                    vertexColors: true
+                } );
+
+                mesh = new THREE.Mesh( geometry, material );
+                mesh.geometry.dynamic = true;
+                mesh.castShadow = true; 
+                mesh.receiveShadow = true; 
+                scene.add( mesh );
+
+                // Renderer
+                renderer = new THREE.WebGLRenderer( { antialias: true } );
+                renderer.setPixelRatio( window.devicePixelRatio );
+                renderer.setSize( window.innerWidth, window.innerHeight );
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                document.body.appendChild( renderer.domElement );
+
+                window.addEventListener('resize', onWindowResize );
+                window.addEventListener('click', onDocumentMouseDown, false);
+            }
+
+           
+            function processWater() {
+                for (var index = segments + 2; index < heightBuffer1.length - segments - 1; index++) {
+                    if (index % (segments + 1) == 0 || index % (segments + 1) == segments) {
+                        continue;
+                    }
+
+                    heightBuffer2[index] = ((heightBuffer1[index + 1] + 
+                                             heightBuffer1[index - 1] + 
+                                             heightBuffer1[index - segments - 1] + 
+                                             heightBuffer1[index + segments + 1]) / 2) - heightBuffer2[index];
+                                             
+                    heightBuffer2[index] *= damping;
+                }
+            }
+
+            function swapBuffers() {
+                for (var i = 0; i < heightBuffer2.length; i++) {
+                    vertices[i * 3 + 2] = heightBuffer2[i];
+                    heightBuffer2[i] = heightBuffer1[i];
+                    heightBuffer1[i] = vertices[i * 3 + 2];
+                }
+            }
+
+            function onWindowResize() {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+
+                renderer.setSize( window.innerWidth, window.innerHeight );
+            }
+
+            // Render funcitons
+            function animate() {
+                requestAnimationFrame( animate );
+               
+
+                processWater();
+                swapBuffers();
+
+                mesh.geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+                mesh.geometry.attributes.position.needsUpdate = true;
+
+                controls.update();
+                render();
+            }
+
+            function render() {
+                renderer.render( scene, camera );
+            }
+		</script>
+	</body>
+</html>
