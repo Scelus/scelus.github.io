@@ -65,7 +65,7 @@
                 controls.update();
 
                 scene = new THREE.Scene();
-                scene.background = new THREE.Color( 0x2A2A2A );
+                scene.background = new THREE.Color( 0xFEFEFE );
                 scene.fog = new THREE.Fog( scene.background, 1, 5000 );
 
                 // Light
@@ -118,10 +118,12 @@
                 geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( normals, 3 ) );
                 geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( colors, 3 ) );
 
-                const material = new THREE.MeshStandardMaterial( {
+                const material = new THREE.MeshPhongMaterial( {
                     color: 0x2c4999,
-                    wireframe: true,
-                    roughness: 0,   
+                    wireframe: false,
+                    transparent: true,
+                    opacity: 0.2,
+                    reflectivity: 0.9,   
                     vertexColors: true
                 } );
 
